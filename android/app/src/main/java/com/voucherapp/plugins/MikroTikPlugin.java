@@ -1,11 +1,10 @@
 package com.voucherapp.plugins;
 
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-
-import org.json.JSONObject;
 
 import java.io.*;
 import java.net.Socket;
@@ -25,7 +24,8 @@ public class MikroTikPlugin extends Plugin {
         String ip = call.getString("ip");
         String password = call.getString("password");
         String action = call.getString("action");
-        String commands = call.optString("commands", "");
+        String commands = call.getString("commands");
+        if (commands == null) commands = "";
 
         if (ip == null || password == null || action == null) {
             call.reject("Faltan parametros requeridos");
@@ -45,7 +45,7 @@ public class MikroTikPlugin extends Plugin {
                     call.reject("Accion desconocida: " + action);
                     return;
             }
-            JSONObject ret = new JSONObject();
+            JSObject ret = new JSObject();
             ret.put("result", result);
             call.resolve(ret);
         } catch (Exception e) {
