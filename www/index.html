@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VoucherApp</title>
+<style>
+:root {
+  --bg: #121212; --surface: #1e1e1e; --primary: #bb86fc;
+  --text: #e0e0e0; --text2: #a0a0a0; --border: #333;
+  --success: #4caf50; --danger: #f44336; --warning: #ff9800;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, 'Segoe UI', sans-serif;
+  background: var(--bg); color: var(--text); padding: 0; min-height: 100vh;
+}
+.header {
+  background: var(--surface); padding: 16px; position: sticky; top: 0; z-index: 10;
+  border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px;
+}
+.header h1 { font-size: 20px; flex: 1; }
+.header .badge { font-size: 11px; color: var(--text2); }
+.btn {
+  padding: 10px 20px; border: none; border-radius: 8px; font-size: 15px;
+  font-weight: 600; cursor: pointer; touch-action: manipulation; transition: .2s;
+}
+.btn:active { transform: scale(.96); }
+.btn-primary { background: var(--primary); color: #000; }
+.btn-success { background: var(--success); color: #fff; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-small { padding: 6px 12px; font-size: 13px; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+.container { padding: 16px; max-width: 500px; margin: 0 auto; }
+.card {
+  background: var(--surface); border-radius: 12px; padding: 16px;
+  margin-bottom: 12px; border: 1px solid var(--border);
+}
+.card-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+.card-sub { font-size: 13px; color: var(--text2); }
+.card-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+input, select {
+  width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); font-size: 16px; margin-bottom: 12px;
+}
+label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 4px; }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; }
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100;
+  align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--surface); border-radius: 16px; padding: 20px; width: 100%;
+  max-width: 400px; max-height: 90vh; overflow-y: auto;
+}
+.modal h2 { font-size: 18px; margin-bottom: 16px; }
+.profile-btn {
+  display: block; width: 100%; padding: 14px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
+  color: var(--text); font-size: 16px; text-align: left; cursor: pointer;
+  touch-action: manipulation;
+}
+.profile-btn:active { background: var(--surface); }
+.profile-btn .sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.loading { text-align: center; padding: 20px; color: var(--text2); }
+.empty { text-align: center; padding: 40px 20px; color: var(--text2); }
+.empty p { margin-bottom: 16px; }
+.toast {
+  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: var(--surface); color: var(--text); padding: 12px 24px;
+  border-radius: 8px; border: 1px solid var(--border); z-index: 200;
+  display: none; font-size: 14px; max-width: 90%; white-space: normal;
+}
+.toast.show { display: block; animation: fadeIn .3s; }
+@keyframes fadeIn { from { opacity: 0; bottom: 20px; } to { opacity: 1; bottom: 30px; } }
+.section-title { font-size: 15px; font-weight: 600; color: var(--text2); margin: 16px 0 8px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>VoucherApp</h1>
+  <span class="badge" id="routerCount">0 routers</span>
+</div>
+
+<div class="container" id="app">
+  <div id="routerList"></div>
+  <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="showModal('router')">+ Agregar MikroTik</button>
+</div>
+
+<!-- Modal Router -->
+<div class="modal-overlay" id="modalRouter">
+  <div class="modal">
+    <h2 id="routerModalTitle">Agregar MikroTik</h2>
+    <input type="hidden" id="routerId">
+    <label>Nombre (interno)</label>
+    <input type="text" id="routerName" placeholder="Ej: MKT_OLIVIA">
+    <label>Dirección IP</label>
+    <input type="text" id="routerIp" placeholder="Ej: 192.168.216.1" inputmode="decimal">
+    <label>Contraseña admin</label>
+    <input type="password" id="routerPass" placeholder="Contraseña del admin">
+    <label>Nombre del Hotspot (en el PDF)</label>
+    <input type="text" id="routerHsName" placeholder="ZONA WIFI">
+    <div class="row">
+      <button class="btn btn-outline" style="flex:1" onclick="closeModal('router')">Cancelar</button>
+      <button class="btn btn-success" style="flex:1" onclick="saveRouter()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Planes -->
+<div class="modal-overlay" id="modalProfiles">
+  <div class="modal">
+    <h2 id="profileTitle">Cargando...</h2>
+    <div id="profileList" class="loading">Conectando al MikroTik...</div>
+  </div>
+</div>
+
+<!-- Modal Generar -->
+<div class="modal-overlay" id="modalGenerate">
+  <div class="modal">
+    <h2 id="genTitle">Generar vouchers</h2>
+    <p id="genInfo" style="color:var(--text2);margin-bottom:12px"></p>
+    <label>Cantidad</label>
+    <input type="number" id="genCount" value="5" min="1" max="100" inputmode="numeric">
+    <div class="row">
+      <button class="btn btn-outline" style="flex:1" onclick="closeModal('generate')">Cancelar</button>
+      <button class="btn btn-success" style="flex:1" onclick="generateVouchers()">Generar</button>
+    </div>
+    <div id="genResult" style="display:none;margin-top:12px">
+      <hr style="border-color:var(--border);margin:12px 0">
+      <div id="genVouchers" class="voucher-grid"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" style="flex:1" onclick="downloadPDF()">📥 Descargar PDF</button>
+        <button class="btn btn-success" style="flex:1" onclick="sharePDF()">📤 Compartir</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="lib/pdf-lib.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

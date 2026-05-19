@@ -1,0 +1,14 @@
+{
+  "appId": "com.voucherapp",
+  "appName": "VoucherApp",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "MikroTik": {
+      "some": "config"
+    }
+  }
+}

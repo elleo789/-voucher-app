@@ -1,0 +1,24 @@
+{
+  "name": "com.voucherapp",
+  "version": "1.0.0",
+  "description": "VoucherApp - Generador de vouchers hotspot para MikroTik",
+  "main": "www/index.html",
+  "scripts": {
+    "build": "echo 'Static app - no build needed'",
+    "cap:init": "npx cap init VoucherApp com.voucherapp --webDir www",
+    "cap:add:android": "npx cap add android",
+    "cap:sync": "npx cap sync android",
+    "cap:build": "cd android && ./gradlew assembleDebug",
+    "cap:open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "pdf-lib": "^1.17.1",
+    "fontkit": "^1.9.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.0"
+  }
+}
