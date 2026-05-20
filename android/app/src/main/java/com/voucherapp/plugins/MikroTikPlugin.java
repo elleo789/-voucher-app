@@ -149,33 +149,54 @@ public class MikroTikPlugin extends Plugin {
         }
 
         List<Map<String, String>> getProfiles() throws Exception {
+            // Use print without-paging to get all profiles reliably
             List<String> words = new ArrayList<>();
             words.add("/ip/hotspot/user/profile/print");
-            words.add("=.proplist=name,on-login");
             sendSentence(words);
 
             List<Map<String, String>> profiles = new ArrayList<>();
             List<Map<String, String>> response = readSentences();
 
+            // Debug: append count to result for debugging
+            // System.out.println("DEBUG: Total sentences: " + response.size());
+
             for (Map<String, String> row : response) {
-                String name = row.get("name");
-                if (name == null || name.equals("default")) continue;
+                try {
+                    String name = row.get("name");
+                    if (name == null || name.equals("default")) continue;
 
-                String onLogin = row.getOrDefault("on-login", "");
-                String validez = "?";
-                if (onLogin.contains("remc")) {
-                    String[] parts = onLogin.split(",");
-                    if (parts.length >= 3) {
-                        validez = parts[2];
+                    // Skip trap/fatal sentences
+                    if (row.containsKey("!trap") || row.containsKey("!fatal")) continue;
+
+                    // Read on-login from ANY key that contains it
+                    String onLogin = "";
+                    for (Map.Entry<String, String> e : row.entrySet()) {
+                        if (e.getKey().equalsIgnoreCase("on-login") || 
+                            e.getKey().equalsIgnoreCase("on_login")) {
+                            onLogin = e.getValue();
+                            break;
+                        }
                     }
-                }
 
-                String timelimit = deduceTimelimit(name);
-                Map<String, String> p = new LinkedHashMap<>();
-                p.put("name", name);
-                p.put("timelimit", timelimit);
-                p.put("validez", validez);
-                profiles.add(p);
+                    String validez = "?";
+                    if (onLogin.contains("remc")) {
+                        // Parse remc fields: remc,ID,VALIDEZ,PRECIO,TIPO,ACCION
+                        String[] parts = onLogin.split(",");
+                        if (parts.length >= 3) {
+                            validez = parts[2];
+                        }
+                    }
+
+                    String timelimit = deduceTimelimit(name);
+                    Map<String, String> p = new LinkedHashMap<>();
+                    p.put("name", name);
+                    p.put("timelimit", timelimit);
+                    p.put("validez", validez);
+                    profiles.add(p);
+                } catch (Exception profileError) {
+                    // Skip profiles that cause parsing errors, continue with rest
+                    // System.out.println("DEBUG: Error parsing profile: " + profileError.getMessage());
+                }
             }
             return profiles;
         }
