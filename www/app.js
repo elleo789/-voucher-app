@@ -29,13 +29,14 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
 // ===== RouterOS API via Capacitor Plugin =====
 
 async function callMikroTik(action, params) {
-  // Llama al plugin nativo de Capacitor
-  // Si Capacitor no esta disponible (pruebas en navegador), usa mock
   if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.MikroTik) {
     const result = await Capacitor.Plugins.MikroTik.execute({ action, ...params });
-    return JSON.parse(result.result);
+    // El plugin devuelve {ok: bool, result: string, error?: string}
+    if (result.ok === false) {
+      throw new Error(result.error || 'Error desconocido');
+    }
+    return result.result || '';
   }
-  // Mock offline para pruebas en navegador
   return mockMikroTik(action, params);
 }
 
