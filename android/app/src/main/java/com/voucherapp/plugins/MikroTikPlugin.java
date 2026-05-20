@@ -149,13 +149,14 @@ public class MikroTikPlugin extends Plugin {
             // Use /ip/hotspot/user/profile/print to get all profiles
             List<String> words = new ArrayList<>();
             words.add("/ip/hotspot/user/profile/print");
-            // Don't use proplist - get ALL fields
+            // Only request name field - minimal response
+            words.add("=.proplist=name");
             sendSentence(words);
 
             List<Map<String, String>> response = readSentences();
             List<Map<String, String>> profiles = new ArrayList<>();
 
-            // Add diagnostic as first entry
+            // Add diagnostic with raw count
             Map<String, String> diag = new LinkedHashMap<>();
             diag.put("name", "__diag__");
             diag.put("timelimit", String.valueOf(response.size()));
@@ -164,40 +165,16 @@ public class MikroTikPlugin extends Plugin {
 
             for (Map<String, String> row : response) {
                 try {
-                    // Skip non-profile sentences
                     if (row.containsKey("!trap") || row.containsKey("!fatal")) continue;
-                    if (!row.containsKey("name")) continue;
-
                     String name = row.get("name");
                     if (name == null || name.equals("default")) continue;
 
-                    // Find on-login field (case insensitive)
-                    String onLogin = "";
-                    for (Map.Entry<String, String> e : row.entrySet()) {
-                        String k = e.getKey().toLowerCase();
-                        if (k.equals("on-login") || k.equals("on_login")) {
-                            onLogin = e.getValue();
-                            break;
-                        }
-                    }
-
-                    String validez = "?";
-                    if (onLogin.contains("remc")) {
-                        String[] parts = onLogin.split(",");
-                        if (parts.length >= 3) {
-                            validez = parts[2];
-                        }
-                    }
-
-                    String timelimit = deduceTimelimit(name);
                     Map<String, String> p = new LinkedHashMap<>();
                     p.put("name", name);
-                    p.put("timelimit", timelimit);
-                    p.put("validez", validez);
+                    p.put("timelimit", "?");
+                    p.put("validez", "?");
                     profiles.add(p);
-                } catch (Exception e) {
-                    // Skip profile on error
-                }
+                } catch (Exception e) {}
             }
             return profiles;
         }
