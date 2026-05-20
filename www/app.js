@@ -43,17 +43,25 @@ async function callMikroTik(action, params) {
 async function fetchProfiles(ip, password) {
   const raw = await callMikroTik('profiles', { ip, password });
   const lines = raw.split('\n').filter(l => l.trim());
+  let diagInfo = '';
   const profiles = [];
   for (const line of lines) {
+    // Lines starting with __ are diagnostic/metadata, skip them
+    if (line.startsWith('__')) {
+      diagInfo += line + ' ';
+      continue;
+    }
     const parts = line.split(',');
-    if (parts.length >= 3 && parts[0] !== 'name') {
+    if (parts.length >= 3 && parts[0] !== 'name' && parts[0] !== '?') {
       profiles.push({
         name: parts[0],
         timelimit: parts[1],
-        validez: parts[2],
+        validez: parts.slice(2).join(','),
       });
     }
   }
+  // Store diagnostics for debugging
+  window.__diag = diagInfo;
   return profiles;
 }
 

@@ -12,10 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 
-/**
- * Plugin Capacitor para conectar con MikroTik RouterOS via API (TCP 8728).
- * No necesita librerias externas - implementa el protocolo RouterOS API nativo.
- */
 @CapacitorPlugin(name = "MikroTik")
 public class MikroTikPlugin extends Plugin {
 
@@ -70,6 +66,8 @@ public class MikroTikPlugin extends Plugin {
         session.close();
 
         StringBuilder sb = new StringBuilder();
+        // First line: diagnostic info (total sentences read)
+        sb.append("__total_read__").append("\n");
         for (Map<String, String> p : profiles) {
             String name = p.getOrDefault("name", "?");
             String tl = p.getOrDefault("timelimit", "?");
@@ -83,7 +81,6 @@ public class MikroTikPlugin extends Plugin {
 
     private String escapeCsvField(String s) {
         if (s == null) return "?";
-        // Replace commas with | to avoid CSV parsing issues
         return s.replace(",", "|");
     }
 
@@ -110,7 +107,7 @@ public class MikroTikPlugin extends Plugin {
 
         RouterOSSession(String host, int port) throws Exception {
             socket = new Socket(host, port);
-            socket.setSoTimeout(10000);
+            socket.setSoTimeout(15000); // 15s timeout
             in = new DataInputStream(socket.getInputStream());
             out = socket.getOutputStream();
         }
@@ -149,30 +146,36 @@ public class MikroTikPlugin extends Plugin {
         }
 
         List<Map<String, String>> getProfiles() throws Exception {
-            // Use print without-paging to get all profiles reliably
+            // Use /ip/hotspot/user/profile/print to get all profiles
             List<String> words = new ArrayList<>();
             words.add("/ip/hotspot/user/profile/print");
+            // Don't use proplist - get ALL fields
             sendSentence(words);
 
-            List<Map<String, String>> profiles = new ArrayList<>();
             List<Map<String, String>> response = readSentences();
+            List<Map<String, String>> profiles = new ArrayList<>();
 
-            // Debug: append count to result for debugging
-            // System.out.println("DEBUG: Total sentences: " + response.size());
+            // Add diagnostic as first entry
+            Map<String, String> diag = new LinkedHashMap<>();
+            diag.put("name", "__diag__");
+            diag.put("timelimit", String.valueOf(response.size()));
+            diag.put("validez", "-");
+            profiles.add(diag);
 
             for (Map<String, String> row : response) {
                 try {
+                    // Skip non-profile sentences
+                    if (row.containsKey("!trap") || row.containsKey("!fatal")) continue;
+                    if (!row.containsKey("name")) continue;
+
                     String name = row.get("name");
                     if (name == null || name.equals("default")) continue;
 
-                    // Skip trap/fatal sentences
-                    if (row.containsKey("!trap") || row.containsKey("!fatal")) continue;
-
-                    // Read on-login from ANY key that contains it
+                    // Find on-login field (case insensitive)
                     String onLogin = "";
                     for (Map.Entry<String, String> e : row.entrySet()) {
-                        if (e.getKey().equalsIgnoreCase("on-login") || 
-                            e.getKey().equalsIgnoreCase("on_login")) {
+                        String k = e.getKey().toLowerCase();
+                        if (k.equals("on-login") || k.equals("on_login")) {
                             onLogin = e.getValue();
                             break;
                         }
@@ -180,7 +183,6 @@ public class MikroTikPlugin extends Plugin {
 
                     String validez = "?";
                     if (onLogin.contains("remc")) {
-                        // Parse remc fields: remc,ID,VALIDEZ,PRECIO,TIPO,ACCION
                         String[] parts = onLogin.split(",");
                         if (parts.length >= 3) {
                             validez = parts[2];
@@ -193,9 +195,8 @@ public class MikroTikPlugin extends Plugin {
                     p.put("timelimit", timelimit);
                     p.put("validez", validez);
                     profiles.add(p);
-                } catch (Exception profileError) {
-                    // Skip profiles that cause parsing errors, continue with rest
-                    // System.out.println("DEBUG: Error parsing profile: " + profileError.getMessage());
+                } catch (Exception e) {
+                    // Skip profile on error
                 }
             }
             return profiles;
@@ -308,11 +309,21 @@ public class MikroTikPlugin extends Plugin {
             List<Map<String, String>> sentences = new ArrayList<>();
 
             while (true) {
+                // Check if socket is closed
+                if (socket.isClosed() || socket.isInputShutdown()) break;
+
                 Map<String, String> sentence = new LinkedHashMap<>();
 
                 while (true) {
+                    // Check for timeout
+                    try {
+                        int avail = in.available();
+                    } catch (IOException e) {
+                        break;
+                    }
+
                     String word = readWord();
-                    if (word.isEmpty()) break;
+                    if (word.isEmpty()) break; // End of sentence
 
                     if (word.startsWith("!")) {
                         sentence.put(word, word);
