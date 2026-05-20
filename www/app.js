@@ -336,51 +336,100 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const pt = 2.83465;
-  const PW = 102 * pt;
-  const PH = 169 * pt;
-  const VW = 60 * pt;
-  const VH = 27 * pt;
-  const MARGIN = (PW - VW) / 2;
-  const GAP = 3 * pt;
+
+  // Medidas exactas del template-small de Mikhmon (en mm convertidas a pt: 1mm = 72/25.4)
+  function mm(v) { return v * 72 / 25.4; }
+
+  const PW = mm(102);
+  const PH = mm(169);
+  const VW = mm(60);
+  const VH = mm(27);
+  const XC = mm(21); // x_center = (102-60)/2
+  const COL_W = mm(26); // (60-8)/2
+  const GAP = mm(3);
 
   for (let i = 0; i < vouchers.length; i++) {
     const pos = i % 3;
     if (pos === 0) doc.addPage([PW, PH]);
     const page = doc.getPage(doc.getPageCount() - 1);
-    const yStart = PH - (15 * pt) - pos * (VH + GAP);
     const v = vouchers[i];
 
-    page.drawRectangle({ x: MARGIN, y: yStart - VH, width: VW, height: VH,
-      borderColor: rgb(0,0,0), borderWidth: 1.5 });
-    page.drawText(hotspotName, { x: MARGIN + 4*pt, y: yStart - 6*pt, size: 9,
-      font: fontBold, color: rgb(0,0,0) });
-    page.drawText('['+(i+1)+']', { x: MARGIN + VW - 14*pt, y: yStart - 6*pt, size: 7,
-      font: font, color: rgb(0,0,0) });
-    page.drawLine({ start: {x: MARGIN+4*pt, y: yStart-9*pt}, end: {x: MARGIN+VW-4*pt, y: yStart-9*pt},
-      thickness: 0.5, color: rgb(0,0,0) });
+    // Y base desde arriba: 15mm top margin + pos * (27+3)mm
+    // En pdf-lib Y crece hacia arriba, entonces calculamos desde abajo
+    const yTop = PH - mm(15) - pos * (VH + GAP);
+    const yBot = yTop - VH;
 
-    const labelY = yStart - 11.5*pt;
-    const colW = (VW - 12*pt) / 2;
-    page.drawText('Username', { x: MARGIN+4*pt, y: labelY, size: 5.5, font, color: rgb(0.3,0.3,0.3) });
-    page.drawText('Password', { x: MARGIN+6*pt+colW, y: labelY, size: 5.5, font, color: rgb(0.3,0.3,0.3) });
+    // Borde externo grueso (0.7mm)
+    page.drawRectangle({
+      x: XC, y: yBot, width: VW, height: VH,
+      borderColor: rgb(0,0,0), borderWidth: mm(0.7)
+    });
 
-    const credY = yStart - 17*pt;
-    page.drawRectangle({ x: MARGIN+4*pt, y: credY, width: colW, height: 5.5*pt,
-      borderColor: rgb(0,0,0), borderWidth: 0.5 });
-    page.drawText(v.user, { x: MARGIN+4*pt+2*pt, y: credY+1*pt, size: 10, font: fontBold, color: rgb(0,0,0) });
-    page.drawRectangle({ x: MARGIN+6*pt+colW, y: credY, width: colW, height: 5.5*pt,
-      borderColor: rgb(0,0,0), borderWidth: 0.5 });
-    page.drawText(v.pass, { x: MARGIN+8*pt+colW, y: credY+1*pt, size: 10, font: fontBold, color: rgb(0,0,0) });
+    // Header: hotspot name centrado + [N] derecha (y = yTop - 2mm)
+    var hdrY = yTop - mm(2) - mm(5);
+    page.drawText(hotspotName, {
+      x: XC + mm(3), y: hdrY, size: mm(3.5), // font size ~10pt
+      font: fontBold, color: rgb(0,0,0)
+    });
+    page.drawText('[' + (i+1) + ']', {
+      x: XC + VW - mm(14), y: hdrY, size: mm(2.5),
+      font: fontBold, color: rgb(0,0,0)
+    });
 
-    const footY = credY - 7*pt;
-    page.drawRectangle({ x: MARGIN+4*pt, y: footY, width: VW-8*pt, height: 5*pt,
-      borderColor: rgb(0,0,0), borderWidth: 0.5 });
-    // Footer: plan: xxx (left) | validez: xxx (right) igual que Mikhmon
-    page.drawText('plan: '+profile, { x: MARGIN+5*pt, y: footY+0.8*pt, size: 6.5,
-      font: fontBold, color: rgb(0,0,0) });
-    page.drawText('validez: '+validez, { x: MARGIN+VW-8*pt-10*validez.length, y: footY+0.8*pt, size: 6.5,
-      font: fontBold, color: rgb(0,0,0) });
+    // Linea separadora (y = yTop - 7.5mm)
+    var lineY = yTop - mm(7.5);
+    page.drawLine({
+      start: { x: XC + mm(3), y: lineY },
+      end: { x: XC + VW - mm(3), y: lineY },
+      thickness: mm(0.3), color: rgb(0,0,0)
+    });
+
+    // Labels: Username / Password (y = yTop - 8.5mm)
+    var labelY = yTop - mm(8.5) - mm(3);
+    page.drawText('Username', {
+      x: XC + mm(3) + mm(2), y: labelY, size: mm(2.1), font, color: rgb(0.3,0.3,0.3)
+    });
+    page.drawText('Password', {
+      x: XC + mm(3) + COL_W + mm(6), y: labelY, size: mm(2.1), font, color: rgb(0.3,0.3,0.3)
+    });
+
+    // Credential boxes (y = yTop - 12mm)
+    var credY = yTop - mm(12) - mm(6);
+    // Username box
+    page.drawRectangle({
+      x: XC + mm(3), y: credY, width: COL_W, height: mm(6),
+      borderColor: rgb(0,0,0), borderWidth: mm(0.3)
+    });
+    page.drawText(v.user, {
+      x: XC + mm(3) + mm(2), y: credY + mm(1.5), size: mm(3.5),
+      font: fontBold, color: rgb(0,0,0)
+    });
+    // Password box
+    page.drawRectangle({
+      x: XC + mm(5) + COL_W, y: credY, width: COL_W, height: mm(6),
+      borderColor: rgb(0,0,0), borderWidth: mm(0.3)
+    });
+    page.drawText(v.pass, {
+      x: XC + mm(7) + COL_W, y: credY + mm(1.5), size: mm(3.5),
+      font: fontBold, color: rgb(0,0,0)
+    });
+
+    // Footer: plan y validez (y = credY - 7.5mm - 5mm = yTop - 27mm = yBot)
+    var footY = credY - mm(7.5) - mm(5);
+    page.drawRectangle({
+      x: XC + mm(3), y: footY, width: VW - mm(6), height: mm(5),
+      borderColor: rgb(0,0,0), borderWidth: mm(0.3)
+    });
+    // plan: xxx (left)
+    page.drawText('plan: ' + profile, {
+      x: XC + mm(4), y: footY + mm(1), size: mm(2.5),
+      font: fontBold, color: rgb(0,0,0)
+    });
+    // validez: xxx (right)
+    page.drawText('validez: ' + validez, {
+      x: XC + mm(4) + mm(20), y: footY + mm(1), size: mm(2.5),
+      font: fontBold, color: rgb(0,0,0)
+    });
   }
   return await doc.save();
 }
