@@ -10,9 +10,16 @@ let usingAndroidBridge = false;
 // ===== Utilidades =====
 
 function toast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.className = 'toast show';
-  setTimeout(() => t.className = 'toast', 2500);
+  var t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.className = 'toast show';
+  t.style.display = 'block';
+  if (window.__toastTimer) clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(function() {
+    t.className = 'toast';
+    t.style.display = 'none';
+  }, 3000);
 }
 
 function showModal(name) {
@@ -64,11 +71,14 @@ async function fetchProfiles(ip, password) {
   const raw = await callMikroTik('profiles', { ip, password });
   const lines = raw.split('\n').filter(l => l.trim());
   const profiles = [];
+  // Solo perfiles con formato Mikhmon: numero + HORA/HORAS/DIA/DIAS
+  const mikhmonRe = /^(\d+)(HORA|HORAS|DIA|DIAS)$/;
   for (const line of lines) {
     const parts = line.split(',');
-    if (parts.length >= 3 && parts[0] !== 'name' && parts[0] !== '?' && !parts[0].startsWith('_debug')) {
+    const name = (parts[0] || '').trim();
+    if (parts.length >= 3 && mikhmonRe.test(name)) {
       profiles.push({
-        name: parts[0],
+        name: name,
         timelimit: parts[1],
         validez: parts.slice(2).join(','),
       });
@@ -377,15 +387,15 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
       thickness: mm(0.3), color: rgb(0,0,0)
     });
 
-    // ---- Labels: Username / Password a 8.5mm del top ----
-    const labelY = yTop - mm(8.5);
+    // ---- Labels: Username / Password a 9.5mm del top (bold) ----
+    const labelY = yTop - mm(9.5);
     const col1CX = XC + ML + COL_W / 2;
     const col2CX = XC + ML + COL_W + mm(2) + COL_W / 2;
-    centerText(page, 'Username', col1CX, labelY, mm(2.1), font, rgb(0.3,0.3,0.3));
-    centerText(page, 'Password', col2CX, labelY, mm(2.1), font, rgb(0.3,0.3,0.3));
+    centerText(page, 'Username', col1CX, labelY, mm(2.1), fontBold, rgb(0,0,0));
+    centerText(page, 'Password', col2CX, labelY, mm(2.1), fontBold, rgb(0,0,0));
 
-    // ---- Credential boxes a 12mm del top, 6mm de alto ----
-    const credY = yTop - mm(12) - mm(6);  // bottom edge de los boxes
+    // ---- Credential boxes a 13mm del top, 6mm de alto ----
+    const credY = yTop - mm(13) - mm(6);  // bottom edge de los boxes
     // Username box
     page.drawRectangle({
       x: XC + ML, y: credY, width: COL_W, height: mm(6),
@@ -401,8 +411,7 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
     centerText(page, v.pass, passBoxX + COL_W/2, credY + mm(1.5), mm(3.5), fontBold, rgb(0,0,0));
 
     // ---- Footer: plan + validez ----
-    // En fpdf: empieza a 19.5mm del top (= 7.5mm desde el borde inferior)
-    const footY = yBot + mm(2.5);  // bottom edge del rect (a 2.5mm del borde inferior)
+    const footY = yBot + mm(2);  // bottom edge del rect (a 2mm del borde inferior)
     page.drawRectangle({
       x: XC + ML, y: footY, width: VW - ML * 2, height: mm(5),
       borderColor: rgb(0,0,0), borderWidth: mm(0.3)
@@ -412,42 +421,49 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
   return await doc.save();
 }
 
-async function downloadPDF() {
+function downloadPDF() {
   if (!lastPdfData) return;
-  const blob = new Blob([lastPdfData.bytes], { type: 'application/pdf' });
 
-  // Intentar con File System Access API (dialogo Guardar Como)
-  try {
-    if ('showSaveFilePicker' in window) {
-      const handle = await window.showSaveFilePicker({
+  // Usar FileReader para crear data URI (compatible con Android WebView)
+  var reader = new FileReader();
+  reader.onloadend = function() {
+    var blob = new Blob([lastPdfData.bytes], { type: 'application/pdf' });
+    var url = URL.createObjectURL(blob);
+
+    // Intentar showSaveFilePicker (dialogo Guardar Como)
+    if (window.showSaveFilePicker) {
+      window.showSaveFilePicker({
         suggestedName: lastPdfData.filename,
         types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }]
+      }).then(function(handle) {
+        return handle.createWritable().then(function(writable) {
+          return writable.write(blob).then(function() { return writable.close(); });
+        });
+      }).then(function() {
+        toast('PDF guardado');
+      }).catch(function(e) {
+        if (e.name !== 'AbortError') {
+          // Fallback a descarga directa
+          doDownload(url);
+        }
+      }).then(function() {
+        URL.revokeObjectURL(url);
       });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      toast('PDF guardado en: ' + handle.name);
-      return;
+    } else {
+      doDownload(url);
     }
-  } catch(e) {
-    // Usuario cancelo o API no disponible
-    if (e.name === 'AbortError' || e.name === 'SecurityError') return;
-  }
+  };
+  reader.readAsArrayBuffer(new Blob([lastPdfData.bytes]));
+}
 
-  // Fallback: descarga directa
-  const url = URL.createObjectURL(blob);
-  try {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = lastPdfData.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    toast('Descargando ' + lastPdfData.filename);
-  } catch(e) {
-    window.open(url, '_blank');
-  }
-  setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+function doDownload(url) {
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = lastPdfData.filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
 }
 
 async function sharePDF() {

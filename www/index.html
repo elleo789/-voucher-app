@@ -71,10 +71,10 @@ label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 4px
   position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
   background: var(--surface); color: var(--text); padding: 12px 24px;
   border-radius: 8px; border: 1px solid var(--border); z-index: 200;
-  display: none; font-size: 14px; max-width: 90%; white-space: normal;
+  display: none !important; font-size: 14px; max-width: 90%; word-break: break-word;
 }
-.toast.show { display: block; animation: fadeIn .3s; }
-@keyframes fadeIn { from { opacity: 0; bottom: 20px; } to { opacity: 1; bottom: 30px; } }
+.toast.show { display: block !important; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .section-title { font-size: 15px; font-weight: 600; color: var(--text2); margin: 16px 0 8px; }
 </style>
 </head>
@@ -95,7 +95,10 @@ label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 4px
 <!-- Modal Router -->
 <div class="modal-overlay" id="modalRouter">
   <div class="modal">
-    <h2 id="routerModalTitle">Agregar MikroTik</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="routerModalTitle" style="margin-bottom:0">Agregar MikroTik</h2>
+      <button onclick="closeModal('router')" style="background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;padding:4px;line-height:1" title="Cerrar">&times;</button>
+    </div>
     <input type="hidden" id="routerId">
     <label>Nombre (interno)</label>
     <input type="text" id="routerName" placeholder="Ej: MKT_OLIVIA">
@@ -115,7 +118,10 @@ label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 4px
 <!-- Modal Planes -->
 <div class="modal-overlay" id="modalProfiles">
   <div class="modal">
-    <h2 id="profileTitle">Cargando...</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="profileTitle" style="margin-bottom:0">Cargando...</h2>
+      <button onclick="closeModal('profiles')" style="background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;padding:4px;line-height:1" title="Cerrar">&times;</button>
+    </div>
     <div id="profileList" class="loading">Conectando al MikroTik...</div>
   </div>
 </div>
@@ -123,7 +129,10 @@ label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 4px
 <!-- Modal Generar -->
 <div class="modal-overlay" id="modalGenerate">
   <div class="modal">
-    <h2 id="genTitle">Generar vouchers</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="genTitle" style="margin-bottom:0">Generar vouchers</h2>
+      <button onclick="closeModal('generate')" style="background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;padding:4px;line-height:1" title="Cerrar">&times;</button>
+    </div>
     <p id="genInfo" style="color:var(--text2);margin-bottom:12px"></p>
     <label>Cantidad</label>
     <input type="number" id="genCount" value="5" min="1" max="100" inputmode="numeric">
