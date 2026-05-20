@@ -84,8 +84,16 @@ async function fetchProfiles(ip, password) {
 }
 
 async function createUsers(ip, password, users, profile, timelimit) {
+  // Comment formato Mikhmon: up-XXX-MM.DD.YY-
+  var now = new Date();
+  var mm = String(now.getMonth()+1).padStart(2,'0');
+  var dd = String(now.getDate()).padStart(2,'0');
+  var yy = String(now.getFullYear()).slice(-2);
+  var rand = Math.floor(Math.random()*900)+100;
+  var comment = 'up-' + rand + '-' + mm + '.' + dd + '.' + yy + '-';
+
   const cmds = users.map(u => {
-    let cmd = `/ip/hotspot/user/add name=${u.user} password=${u.pass} profile=${profile} server=all comment=up-${Date.now()}`;
+    let cmd = `/ip/hotspot/user/add name=${u.user} password=${u.pass} profile=${profile} server=all comment=${comment}`;
     if (timelimit) cmd += ` limit-uptime=${timelimit}`;
     return cmd;
   });
@@ -368,7 +376,10 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
     const footY = credY - 7*pt;
     page.drawRectangle({ x: MARGIN+4*pt, y: footY, width: VW-8*pt, height: 5*pt,
       borderColor: rgb(0,0,0), borderWidth: 0.5 });
-    page.drawText(profile+' | '+validez, { x: MARGIN+6*pt, y: footY+0.5*pt, size: 7,
+    // Footer: plan: xxx (left) | validez: xxx (right) igual que Mikhmon
+    page.drawText('plan: '+profile, { x: MARGIN+5*pt, y: footY+0.8*pt, size: 6.5,
+      font: fontBold, color: rgb(0,0,0) });
+    page.drawText('validez: '+validez, { x: MARGIN+VW-8*pt-10*validez.length, y: footY+0.8*pt, size: 6.5,
       font: fontBold, color: rgb(0,0,0) });
   }
   return await doc.save();
