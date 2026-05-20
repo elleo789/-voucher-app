@@ -35,15 +35,16 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Register plugin
-        run: echo '[{"pkg":"com.voucherapp.plugins","class":"com.voucherapp.plugins.MikroTikPlugin"}]' > android/app/src/main/assets/capacitor.plugins.json
+      - name: Verify plugin file exists and write it
+        run: |
+          echo '[{"pkg":"com.voucherapp.plugins","class":"com.voucherapp.plugins.MikroTikPlugin"}]' > android/app/src/main/assets/capacitor.plugins.json
+          echo "=== Plugins JSON content ==="
+          cat android/app/src/main/assets/capacitor.plugins.json
 
       - name: Build APK
         run: |
           chmod +x android/gradlew
-          cd android
-          export JAVA_HOME=$JAVA_HOME
-          ./gradlew assembleDebug
+          cd android && ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

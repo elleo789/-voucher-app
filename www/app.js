@@ -28,10 +28,13 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
 
 // ===== RouterOS API via Capacitor Plugin =====
 
+var __usingMock = false;
+
 async function callMikroTik(action, params) {
-  if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.MikroTik) {
+  var capOk = typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.MikroTik;
+  __usingMock = !capOk;
+  if (capOk) {
     const result = await Capacitor.Plugins.MikroTik.execute({ action, ...params });
-    // El plugin devuelve {ok: bool, result: string, error?: string}
     if (result.ok === false) {
       throw new Error(result.error || 'Error desconocido');
     }
@@ -90,6 +93,8 @@ function saveRouters() {
 function renderRouters() {
   const el = document.getElementById('routerList');
   document.getElementById('routerCount').textContent = routers.length + ' MikroTik';
+  var warn = document.getElementById('mockWarning');
+  if (warn) warn.style.display = __usingMock ? 'block' : 'none';
   if (routers.length === 0) {
     el.innerHTML = '<div class="empty"><p>No hay MikroTiks agregados</p><p style="font-size:13px">Agrega el primero para empezar</p></div>';
     return;
