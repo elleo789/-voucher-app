@@ -386,14 +386,26 @@ function downloadPDF() {
 
 async function sharePDF() {
   if (!lastPdfData) return;
-  const blob = new Blob([lastPdfData.bytes], { type: 'application/pdf' });
-  if (navigator.share && navigator.canShare) {
-    const file = new File([blob], lastPdfData.filename, { type: 'application/pdf' });
-    if (navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: 'Vouchers' }); return; } catch(e) {}
-    }
+  
+  // Try Android bridge share first
+  if (typeof AndroidBridge !== 'undefined' && AndroidBridge.shareFile) {
+    // Convert blob to base64
+    var reader = new FileReader();
+    reader.onload = function() {
+      var base64 = reader.result.split(',')[1];
+      AndroidBridge.shareFile(
+        base64,
+        lastPdfData.filename,
+        'application/pdf'
+      );
+    };
+    reader.readAsDataURL(new Blob([lastPdfData.bytes], {type:'application/pdf'}));
+    return;
   }
+  
+  // Fallback: download
   downloadPDF();
+  toast('PDF descargado - comparte desde Descargas');
 }
 
 // ===== Mock offline =====

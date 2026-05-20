@@ -1,49 +1,51 @@
 package com.voucherapp;
 
+import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
+import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
+import androidx.core.content.FileProvider;
+
 import com.getcapacitor.BridgeActivity;
 import com.voucherapp.plugins.MikroTikPlugin;
+
+import java.io.File;
+import java.io.FileOutputStream;
 
 public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Register Capacitor plugin
         registerPlugin(MikroTikPlugin.class);
-
-        // Add direct JavaScript bridge (bypasses Capacitor plugin system)
         addJavascriptBridge();
     }
 
     private void addJavascriptBridge() {
         try {
-            // Wait for bridge to initialize, then add JS interface
             getBridge().getWebView().addJavascriptInterface(
-                new MikroTikJSBridge(), "AndroidBridge"
+                new MikroTikJSBridge(this), "AndroidBridge"
             );
         } catch (Exception e) {
-            // If bridge isn't ready yet, try after a short delay
             getBridge().getWebView().post(() -> {
                 try {
                     getBridge().getWebView().addJavascriptInterface(
-                        new MikroTikJSBridge(), "AndroidBridge"
+                        new MikroTikJSBridge(MainActivity.this), "AndroidBridge"
                     );
-                } catch (Exception ex) {
-                    // Ignore
-                }
+                } catch (Exception ignored) {}
             });
         }
     }
 
-    /**
-     * Direct JavaScript-to-Java bridge for MikroTik API.
-     * This is called from JavaScript via AndroidBridge.mikroTikExecute(...)
-     */
     private static class MikroTikJSBridge {
+        private Context context;
+
+        MikroTikJSBridge(Context context) {
+            this.context = context;
+        }
 
         @JavascriptInterface
         public String mikroTikExecute(String ip, String password, String action, String commands) {
@@ -70,13 +72,45 @@ public class MainActivity extends BridgeActivity {
             }
         }
 
+        @JavascriptInterface
+        public void shareFile(String base64Data, String filename, String mimeType) {
+            try {
+                // Decode base64
+                byte[] data = Base64.decode(base64Data, Base64.DEFAULT);
+
+                // Write to temp file
+                File cacheDir = new File(context.getCacheDir(), "shared");
+                cacheDir.mkdirs();
+                File file = new File(cacheDir, filename);
+                FileOutputStream fos = new FileOutputStream(file);
+                fos.write(data);
+                fos.close();
+
+                // Create share intent with FileProvider
+                Uri uri = FileProvider.getUriForFile(
+                    context,
+                    context.getPackageName() + ".fileprovider",
+                    file
+                );
+
+                Intent intent = new Intent(Intent.ACTION_SEND);
+                intent.setType(mimeType);
+                intent.putExtra(Intent.EXTRA_STREAM, uri);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+                context.startActivity(Intent.createChooser(intent, "Compartir vouchers"));
+            } catch (Exception e) {
+                // Ignore share errors
+            }
+        }
+
         private String getProfilesJson(MikroTikPlugin.RouterOSSession session) throws Exception {
             java.util.List<java.util.Map<String, String>> profiles = session.getProfiles();
             StringBuilder sb = new StringBuilder();
             sb.append("{\"ok\":true,\"result\":\"");
             int count = 0;
             for (java.util.Map<String, String> p : profiles) {
-                if (p.containsKey("__diag__")) continue;
                 count++;
                 String name = p.getOrDefault("name", "?");
                 String tl = p.getOrDefault("timelimit", "?");
@@ -86,7 +120,7 @@ public class MainActivity extends BridgeActivity {
                   .append(escapeJson(val)).append("\\n");
             }
             if (count == 0) {
-                sb.append("__total__,").append(profiles.size()).append(",0");
+                sb.append("sin%20perfiles");
             }
             sb.append("\"}");
             return sb.toString();

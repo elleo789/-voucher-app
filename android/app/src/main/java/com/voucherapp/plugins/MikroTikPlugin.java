@@ -169,9 +169,8 @@ public class MikroTikPlugin extends Plugin {
         public List<Map<String, String>> getProfiles() throws Exception {
             List<String> words = new ArrayList<>();
             words.add("/ip/hotspot/user/profile/print");
-            // Request name and on-login fields
-            words.add("=.proplist=name");
-            words.add("=.proplist=on-login");
+            // Request name and on-login fields (single proplist, comma-separated)
+            words.add("=.proplist=name,on-login");
             sendSentence(words);
 
             List<Map<String, String>> response = readSentences();
