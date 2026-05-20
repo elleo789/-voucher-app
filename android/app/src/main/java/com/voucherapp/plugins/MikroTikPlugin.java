@@ -167,46 +167,51 @@ public class MikroTikPlugin extends Plugin {
         }
 
         public List<Map<String, String>> getProfiles() throws Exception {
-            // Use /ip/hotspot/user/profile/print to get all profiles
-            // Test 1: send bare print with no args to see raw response count
             List<String> words = new ArrayList<>();
             words.add("/ip/hotspot/user/profile/print");
+            // Request name and on-login fields
+            words.add("=.proplist=name");
+            words.add("=.proplist=on-login");
             sendSentence(words);
 
             List<Map<String, String>> response = readSentences();
             List<Map<String, String>> profiles = new ArrayList<>();
 
-            // Store diagnostic: count of all sentences received
-            int totalSentences = response.size();
-            int profileCount = 0;
-            int trapCount = 0;
-            StringBuilder rawNames = new StringBuilder();
-
             for (Map<String, String> row : response) {
-                if (row.containsKey("!trap")) { trapCount++; continue; }
-                if (row.containsKey("!fatal")) { continue; }
-                if (row.containsKey("!done")) { continue; }
-                if (!row.containsKey("name")) continue;
+                try {
+                    if (row.containsKey("!trap") || row.containsKey("!fatal")) continue;
+                    if (row.containsKey("!done")) continue;
+                    String name = row.get("name");
+                    if (name == null || name.equals("default")) continue;
 
-                String name = row.get("name");
-                if (name == null || name.equals("default")) continue;
-                profileCount++;
-                rawNames.append(name).append("|");
+                    // Read on-login (may come as on-login or on_login)
+                    String onLogin = "";
+                    for (Map.Entry<String, String> e : row.entrySet()) {
+                        String k = e.getKey().toLowerCase();
+                        if (k.equals("on-login") || k.equals("on_login")) {
+                            onLogin = e.getValue();
+                            break;
+                        }
+                    }
 
-                Map<String, String> p = new LinkedHashMap<>();
-                p.put("name", name);
-                p.put("timelimit", "?");
-                p.put("validez", "?");
-                profiles.add(p);
+                    String validez = "?";
+                    if (onLogin.contains("remc")) {
+                        String[] parts = onLogin.split(",");
+                        if (parts.length >= 3) {
+                            validez = parts[2];
+                        }
+                    }
+
+                    String timelimit = deduceTimelimit(name);
+                    Map<String, String> p = new LinkedHashMap<>();
+                    p.put("name", name);
+                    p.put("timelimit", timelimit);
+                    p.put("validez", validez);
+                    profiles.add(p);
+                } catch (Exception e) {
+                    // Skip profile on parsing error
+                }
             }
-
-            // Diagnostic line
-            Map<String, String> diag = new LinkedHashMap<>();
-            diag.put("name", "__total__");
-            diag.put("timelimit", String.valueOf(totalSentences));
-            diag.put("validez", profileCount + "p/" + trapCount + "t/" + rawNames.toString());
-            profiles.add(0, diag);
-
             return profiles;
         }
 
