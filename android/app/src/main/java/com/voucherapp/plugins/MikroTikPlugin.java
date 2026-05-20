@@ -100,19 +100,19 @@ public class MikroTikPlugin extends Plugin {
         return result.toString().trim();
     }
 
-    private static class RouterOSSession {
+    public static class RouterOSSession {
         private Socket socket;
         private DataInputStream in;
         private OutputStream out;
 
-        RouterOSSession(String host, int port) throws Exception {
+        public RouterOSSession(String host, int port) throws Exception {
             socket = new Socket(host, port);
             socket.setSoTimeout(15000); // 15s timeout
             in = new DataInputStream(socket.getInputStream());
             out = socket.getOutputStream();
         }
 
-        void login(String password) throws Exception {
+        public void login(String password) throws Exception {
             List<String> words = new ArrayList<>();
             words.add("/login");
             sendSentence(words);
@@ -145,7 +145,7 @@ public class MikroTikPlugin extends Plugin {
             }
         }
 
-        List<Map<String, String>> getProfiles() throws Exception {
+        public List<Map<String, String>> getProfiles() throws Exception {
             // Use /ip/hotspot/user/profile/print to get all profiles
             // Test 1: send bare print with no args to see raw response count
             List<String> words = new ArrayList<>();
@@ -189,7 +189,7 @@ public class MikroTikPlugin extends Plugin {
             return profiles;
         }
 
-        String execute(String command) throws Exception {
+        public String execute(String command) throws Exception {
             List<String> words = new ArrayList<>();
             String[] parts = command.split("\\s+");
             words.add(parts[0]);
@@ -219,7 +219,7 @@ public class MikroTikPlugin extends Plugin {
             return result.toString().trim();
         }
 
-        void close() {
+        public void close() {
             try { if (socket != null) socket.close(); } catch (Exception ignored) {}
         }
 

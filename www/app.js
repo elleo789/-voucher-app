@@ -1,11 +1,11 @@
 // ===== VoucherApp - Motor principal =====
-// Reemplaza todo el backend Flask. Corre 100% en el WebView.
-// La conexion al MikroTik se hace via plugin nativo Capacitor (SSH).
+// Conexion al MikroTik via Android WebView JS Bridge
 
 let routers = [];
 let currentRouter = null;
 let currentProfile = null;
 let lastPdfData = null;
+let usingAndroidBridge = false;
 
 // ===== Utilidades =====
 
@@ -26,21 +26,38 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
   el.addEventListener('click', e => { if(e.target === el) el.classList.remove('active'); });
 });
 
-// ===== RouterOS API via Capacitor Plugin =====
+// ===== RouterOS API via Android Bridge =====
 
-var __usingMock = false;
+function bridgeAvailable() {
+  return typeof AndroidBridge !== 'undefined' && AndroidBridge.mikroTikExecute;
+}
 
 async function callMikroTik(action, params) {
-  var capOk = typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.MikroTik;
-  __usingMock = !capOk;
-  if (capOk) {
-    const result = await Capacitor.Plugins.MikroTik.execute({ action, ...params });
-    if (result.ok === false) {
-      throw new Error(result.error || 'Error desconocido');
+  if (bridgeAvailable()) {
+    var result = AndroidBridge.mikroTikExecute(
+      params.ip || '',
+      params.password || '',
+      action,
+      params.commands || ''
+    );
+    // Result is JSON string from Java
+    var data = JSON.parse(result);
+    if (data.ok === false) {
+      throw new Error(data.error || 'Error en MikroTik');
     }
-    return result.result || '';
+    return data.result || '';
   }
   return mockMikroTik(action, params);
+}
+
+function testConnection() {
+  if (bridgeAvailable()) {
+    toast('✅ Bridge Android disponible');
+  } else if (typeof Capacitor !== 'undefined') {
+    toast('⚠️ Capacitor detectado pero sin plugin MikroTik');
+  } else {
+    toast('❌ Sin bridge - modo demo');
+  }
 }
 
 async function fetchProfiles(ip, password) {
@@ -92,9 +109,11 @@ function saveRouters() {
 
 function renderRouters() {
   const el = document.getElementById('routerList');
+  var hasBridge = bridgeAvailable();
   document.getElementById('routerCount').textContent = routers.length + ' MikroTik';
   var warn = document.getElementById('mockWarning');
-  if (warn) warn.style.display = __usingMock ? 'block' : 'none';
+  if (warn) warn.style.display = hasBridge ? 'none' : 'block';
+
   if (routers.length === 0) {
     el.innerHTML = '<div class="empty"><p>No hay MikroTiks agregados</p><p style="font-size:13px">Agrega el primero para empezar</p></div>';
     return;
@@ -137,8 +156,6 @@ function updateRouter(id, name, ip, password, hotspotname) {
   }
 }
 
-// ===== Handlers de UI =====
-
 function saveRouter() {
   const id = document.getElementById('routerId').value;
   const name = document.getElementById('routerName').value.trim();
@@ -180,7 +197,7 @@ async function deleteRouter(id) {
   toast('MikroTik eliminado');
 }
 
-// ===== Planes / Perfiles =====
+// ===== Planes =====
 
 async function openProfiles(routerId) {
   const r = routers.find(x => x.id === routerId);
@@ -191,17 +208,19 @@ async function openProfiles(routerId) {
   showModal('profiles');
 
   try {
-    const profiles = await fetchProfiles(r.ip, r.password);
+    // Test bridge first
+    if (!bridgeAvailable()) {
+      document.getElementById('profileList').innerHTML = '<div class="empty"><p>⚠️ Sin conexion al MikroTik</p><p style="font-size:12px;color:var(--text2)">Modo demo - datos de prueba</p></div>' + getMockProfileButtons();
+      return;
+    }
 
-    // Show diagnostic info
+    const profiles = await fetchProfiles(r.ip, r.password);
     const diag = window.__diagLines || [];
+
     let html = '';
     if (diag.length > 0) {
       html += '<div style="color:var(--warning);font-size:12px;margin-bottom:8px;padding:8px;background:var(--bg);border-radius:6px">';
-      diag.forEach(d => {
-        const parts = d.split(',');
-        html += '<div>' + escHtml(d) + '</div>';
-      });
+      diag.forEach(d => { html += '<div>' + escHtml(d) + '</div>'; });
       html += '</div>';
     }
 
@@ -219,6 +238,23 @@ async function openProfiles(routerId) {
   } catch(e) {
     document.getElementById('profileList').innerHTML = `<div class="empty"><p>Error: ${escHtml(e.message || e)}</p><button class="btn btn-small btn-outline" style="margin-top:12px" onclick="openProfiles('${escAttr(routerId)}')">Reintentar</button></div>`;
   }
+}
+
+function getMockProfileButtons() {
+  var mockProfiles = [
+    {name:'1HORA', tl:'1h', val:'3 días'},
+    {name:'2HORAS', tl:'2h', val:'3 días'},
+    {name:'1DIA', tl:'1d', val:'3 días'},
+    {name:'7DIAS', tl:'7d', val:'7 días'},
+    {name:'15DIAS', tl:'15d', val:'15 días'},
+    {name:'30DIAS', tl:'30d', val:'30 días'},
+  ];
+  return mockProfiles.map(p => `
+    <button class="profile-btn" onclick="openGenerate('${escAttr(p.name)}', '${escAttr(p.tl)}', '${escAttr(p.val)}')" style="opacity:0.6">
+      <strong>${escHtml(p.name)}</strong>
+      <div class="sub">⏱ ${escHtml(p.tl)} &middot; Vence: ${escHtml(p.val)} (demo)</div>
+    </button>
+  `).join('');
 }
 
 // ===== Generar vouchers =====
@@ -253,38 +289,31 @@ async function generateVouchers() {
   const vouchers = Array.from({length: count}, () => ({ user: randomUser(), pass: randomPass() }));
 
   try {
-    // Crear usuarios en MikroTik
-    await createUsers(ip, password, vouchers, profile, timelimit);
+    if (bridgeAvailable()) {
+      await createUsers(ip, password, vouchers, profile, timelimit);
+    }
 
-    // Generar PDF
     const pdfBytes = await generarPDF(vouchers, hotspotName, profile, validez);
     lastPdfData = { bytes: pdfBytes, filename: `vouchers_${profile}_${Date.now()}.pdf` };
 
-    // Mostrar resultado
     document.getElementById('genResult').style.display = 'block';
     document.getElementById('genVouchers').innerHTML = vouchers.map(v =>
       `<div class="voucher-item"><span class="v-user">${v.user}</span><span class="v-pass">${v.pass}</span></div>`
     ).join('');
 
-    // Estilo inline para la grilla de vouchers
     const styleCheck = document.querySelector('#voucherGridStyle');
     if (!styleCheck) {
       const s = document.createElement('style');
       s.id = 'voucherGridStyle';
       s.textContent = `
-        .voucher-grid {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px;
-        }
-        .voucher-item {
-          background: var(--bg); border-radius: 8px; padding: 10px; text-align: center;
-        }
+        .voucher-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+        .voucher-item { background: var(--bg); border-radius: 8px; padding: 10px; text-align: center; }
         .voucher-item .v-user { display: block; font-size: 16px; font-weight: 700; letter-spacing: 2px; }
         .voucher-item .v-pass { display: block; font-size: 14px; color: var(--text2); margin-top: 2px; }
       `;
       document.head.appendChild(s);
     }
-
-    toast(`${vouchers.length} vouchers generados!`);
+    toast(vouchers.length + ' vouchers generados!');
   } catch(e) {
     toast('Error: ' + (e.message || e));
   } finally {
@@ -292,108 +321,56 @@ async function generateVouchers() {
   }
 }
 
-// ===== PDF Generation (pdf-lib) =====
+// ===== PDF Generation =====
 
 async function generarPDF(vouchers, hotspotName, profile, validez) {
-  // Cargar pdf-lib del CDN
   const { PDFDocument, rgb, StandardFonts } = PDFLib;
-
   const doc = await PDFDocument.create();
-  // Usar Helvetica (built-in, no necesita fuentes externas)
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
-
-  // Pagina: 102mm x 169mm (aprox 289 x 479 pt, 1mm = 2.83465pt)
-  // Milimetros a puntos: 1mm = 72/25.4 ≈ 2.83465 pt
   const pt = 2.83465;
-  const PW = 102 * pt;  // ~289 pt
-  const PH = 169 * pt;  // ~479 pt
-
-  // Voucher size: 60mm x 27mm
+  const PW = 102 * pt;
+  const PH = 169 * pt;
   const VW = 60 * pt;
   const VH = 27 * pt;
-  const MARGIN = (PW - VW) / 2; // centrado horizontal
-  const GAP = 3 * pt; // espacio entre vouchers
-
-  let pageIndex = 0;
+  const MARGIN = (PW - VW) / 2;
+  const GAP = 3 * pt;
 
   for (let i = 0; i < vouchers.length; i++) {
     const pos = i % 3;
-    if (pos === 0) {
-      // Nueva pagina
-      const page = doc.addPage([PW, PH]);
-      pageIndex = doc.getPageCount() - 1;
-    }
-
-    const page = doc.getPage(pageIndex);
+    if (pos === 0) doc.addPage([PW, PH]);
+    const page = doc.getPage(doc.getPageCount() - 1);
     const yStart = PH - (15 * pt) - pos * (VH + GAP);
     const v = vouchers[i];
 
-    // Borde externo grueso
-    page.drawRectangle({
-      x: MARGIN, y: yStart - VH, width: VW, height: VH,
-      borderColor: rgb(0, 0, 0), borderWidth: 1.5,
-    });
+    page.drawRectangle({ x: MARGIN, y: yStart - VH, width: VW, height: VH,
+      borderColor: rgb(0,0,0), borderWidth: 1.5 });
+    page.drawText(hotspotName, { x: MARGIN + 4*pt, y: yStart - 6*pt, size: 9,
+      font: fontBold, color: rgb(0,0,0) });
+    page.drawText('['+(i+1)+']', { x: MARGIN + VW - 14*pt, y: yStart - 6*pt, size: 7,
+      font: font, color: rgb(0,0,0) });
+    page.drawLine({ start: {x: MARGIN+4*pt, y: yStart-9*pt}, end: {x: MARGIN+VW-4*pt, y: yStart-9*pt},
+      thickness: 0.5, color: rgb(0,0,0) });
 
-    // Header: nombre del hotspot + contador
-    const headerY = yStart - 6 * pt;
-    page.drawText(hotspotName, {
-      x: MARGIN + 4 * pt, y: headerY, size: 9,
-      font: fontBold, color: rgb(0, 0, 0),
-    });
-    page.drawText(`[${i+1}]`, {
-      x: MARGIN + VW - 14 * pt, y: headerY, size: 7,
-      font: font, color: rgb(0, 0, 0),
-    });
+    const labelY = yStart - 11.5*pt;
+    const colW = (VW - 12*pt) / 2;
+    page.drawText('Username', { x: MARGIN+4*pt, y: labelY, size: 5.5, font, color: rgb(0.3,0.3,0.3) });
+    page.drawText('Password', { x: MARGIN+6*pt+colW, y: labelY, size: 5.5, font, color: rgb(0.3,0.3,0.3) });
 
-    // Linea separadora
-    page.drawLine({
-      start: { x: MARGIN + 4 * pt, y: yStart - 9 * pt },
-      end: { x: MARGIN + VW - 4 * pt, y: yStart - 9 * pt },
-      thickness: 0.5, color: rgb(0, 0, 0),
-    });
+    const credY = yStart - 17*pt;
+    page.drawRectangle({ x: MARGIN+4*pt, y: credY, width: colW, height: 5.5*pt,
+      borderColor: rgb(0,0,0), borderWidth: 0.5 });
+    page.drawText(v.user, { x: MARGIN+4*pt+2*pt, y: credY+1*pt, size: 10, font: fontBold, color: rgb(0,0,0) });
+    page.drawRectangle({ x: MARGIN+6*pt+colW, y: credY, width: colW, height: 5.5*pt,
+      borderColor: rgb(0,0,0), borderWidth: 0.5 });
+    page.drawText(v.pass, { x: MARGIN+8*pt+colW, y: credY+1*pt, size: 10, font: fontBold, color: rgb(0,0,0) });
 
-    // Labels
-    const labelY = yStart - 11.5 * pt;
-    const colW = (VW - 12 * pt) / 2;
-    page.drawText('Username', {
-      x: MARGIN + 4 * pt, y: labelY, size: 5.5, font: font, color: rgb(0.3, 0.3, 0.3),
-    });
-    page.drawText('Password', {
-      x: MARGIN + 6 * pt + colW, y: labelY, size: 5.5, font: font, color: rgb(0.3, 0.3, 0.3),
-    });
-
-    // Credenciales con borde
-    const credY = yStart - 17 * pt;
-    page.drawRectangle({
-      x: MARGIN + 4 * pt, y: credY, width: colW, height: 5.5 * pt,
-      borderColor: rgb(0,0,0), borderWidth: 0.5,
-    });
-    page.drawText(v.user, {
-      x: MARGIN + 4 * pt + 2 * pt, y: credY + 1 * pt, size: 10,
-      font: fontBold, color: rgb(0,0,0),
-    });
-    page.drawRectangle({
-      x: MARGIN + 6 * pt + colW, y: credY, width: colW, height: 5.5 * pt,
-      borderColor: rgb(0,0,0), borderWidth: 0.5,
-    });
-    page.drawText(v.pass, {
-      x: MARGIN + 8 * pt + colW, y: credY + 1 * pt, size: 10,
-      font: fontBold, color: rgb(0,0,0),
-    });
-
-    // Footer: perfil | validez
-    const footY = credY - 7 * pt;
-    page.drawRectangle({
-      x: MARGIN + 4 * pt, y: footY, width: VW - 8 * pt, height: 5 * pt,
-      borderColor: rgb(0,0,0), borderWidth: 0.5,
-    });
-    page.drawText(`${profile} | ${validez}`, {
-      x: MARGIN + 6 * pt, y: footY + 0.5 * pt, size: 7,
-      font: fontBold, color: rgb(0,0,0),
-    });
+    const footY = credY - 7*pt;
+    page.drawRectangle({ x: MARGIN+4*pt, y: footY, width: VW-8*pt, height: 5*pt,
+      borderColor: rgb(0,0,0), borderWidth: 0.5 });
+    page.drawText(profile+' | '+validez, { x: MARGIN+6*pt, y: footY+0.5*pt, size: 7,
+      font: fontBold, color: rgb(0,0,0) });
   }
-
   return await doc.save();
 }
 
@@ -402,52 +379,49 @@ function downloadPDF() {
   const blob = new Blob([lastPdfData.bytes], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = lastPdfData.filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  a.href = url; a.download = lastPdfData.filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
 async function sharePDF() {
   if (!lastPdfData) return;
   const blob = new Blob([lastPdfData.bytes], { type: 'application/pdf' });
-
   if (navigator.share && navigator.canShare) {
     const file = new File([blob], lastPdfData.filename, { type: 'application/pdf' });
     if (navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Vouchers' });
-        return;
-      } catch(e) { /* user cancelled */ }
+      try { await navigator.share({ files: [file], title: 'Vouchers' }); return; } catch(e) {}
     }
   }
-  // Fallback: descargar
   downloadPDF();
 }
 
-// ===== Mock offline para pruebas en navegador =====
+// ===== Mock offline =====
 
 function mockMikroTik(action, params) {
   if (action === 'profiles') {
     return [
-      '1HORA,1h,3 días',
-      '2HORAS,2h,3 días',
-      '1DIA,1d,3 días',
-      '7DIAS,7d,7 días',
-      '15DIAS,15d,15 días',
-      '30DIAS,30d,30 días',
+      '1HORA,1h,3 d\u00edas',
+      '2HORAS,2h,3 d\u00edas',
+      '1DIA,1d,3 d\u00edas',
+      '7DIAS,7d,7 d\u00edas',
+      '15DIAS,15d,15 d\u00edas',
+      '30DIAS,30d,30 d\u00edas',
     ].join('\n');
   }
-  if (action === 'execute') {
-    return 'Usuarios creados exitosamente';
-  }
+  if (action === 'execute') return 'OK (demo)';
   return 'OK';
 }
 
 // ===== Inicializacion =====
-
 (function init() {
   loadRouters();
+  // Test bridge after 1s
+  setTimeout(function() {
+    if (bridgeAvailable()) {
+      toast('✅ Conectado al MikroTik');
+    } else {
+      toast('⚠️ Modo demo - sin MikroTik');
+    }
+  }, 1500);
 })();
