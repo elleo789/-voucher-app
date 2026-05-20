@@ -46,10 +46,15 @@ public class MikroTikPlugin extends Plugin {
                     return;
             }
             JSObject ret = new JSObject();
-            ret.put("result", result);
+            ret.put("result", result != null ? result : "");
+            ret.put("ok", true);
             call.resolve(ret);
         } catch (Exception e) {
-            call.reject(e.getMessage());
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("error", e.getMessage());
+            ret.put("result", "");
+            call.resolve(ret);
         }
     }
 
@@ -66,11 +71,20 @@ public class MikroTikPlugin extends Plugin {
 
         StringBuilder sb = new StringBuilder();
         for (Map<String, String> p : profiles) {
-            sb.append(p.get("name")).append(",")
-              .append(p.get("timelimit")).append(",")
-              .append(p.get("validez")).append("\n");
+            String name = p.getOrDefault("name", "?");
+            String tl = p.getOrDefault("timelimit", "?");
+            String val = p.getOrDefault("validez", "?");
+            sb.append(escapeCsvField(name)).append(",")
+              .append(escapeCsvField(tl)).append(",")
+              .append(escapeCsvField(val)).append("\n");
         }
         return sb.toString().trim();
+    }
+
+    private String escapeCsvField(String s) {
+        if (s == null) return "?";
+        // Replace commas with | to avoid CSV parsing issues
+        return s.replace(",", "|");
     }
 
     private String executeCommands(String ip, String password, String commands) throws Exception {
