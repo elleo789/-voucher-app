@@ -169,12 +169,12 @@ public class MikroTikPlugin extends Plugin {
         public List<Map<String, String>> getProfiles() throws Exception {
             List<String> words = new ArrayList<>();
             words.add("/ip/hotspot/user/profile/print");
-            // Request name and on-login fields (single proplist, comma-separated)
-            words.add("=.proplist=name,on-login");
+            words.add("=.proplist=name,on-login,comment,validity,keepalive-timeout,session-timeout,idle-timeout");
             sendSentence(words);
 
             List<Map<String, String>> response = readSentences();
             List<Map<String, String>> profiles = new ArrayList<>();
+            boolean firstProfile = true;
 
             for (Map<String, String> row : response) {
                 try {
@@ -182,6 +182,22 @@ public class MikroTikPlugin extends Plugin {
                     if (row.containsKey("!done")) continue;
                     String name = row.get("name");
                     if (name == null || name.equals("default")) continue;
+
+                    // Diagnostic: dump all fields for first profile
+                    if (firstProfile) {
+                        firstProfile = false;
+                        StringBuilder debug = new StringBuilder("__debug__");
+                        for (Map.Entry<String, String> e : row.entrySet()) {
+                            if (!e.getKey().startsWith("!")) {
+                                debug.append("|").append(e.getKey()).append(":").append(e.getValue().length() > 50 ? e.getValue().substring(0,50) : e.getValue());
+                            }
+                        }
+                        Map<String, String> diag = new LinkedHashMap<>();
+                        diag.put("name", debug.toString());
+                        diag.put("timelimit", "-");
+                        diag.put("validez", "-");
+                        profiles.add(diag);
+                    }
 
                     // Read on-login (may come as on-login or on_login)
                     String onLogin = "";
@@ -193,12 +209,22 @@ public class MikroTikPlugin extends Plugin {
                         }
                     }
 
+                    // Also check comment field and validity field
+                    String comment = row.getOrDefault("comment", "");
+                    String validityField = row.getOrDefault("validity", "");
+
                     String validez = "?";
-                    if (onLogin.contains("remc")) {
+                    
+                    // Priority: validity field > on-login remc > comment
+                    if (!validityField.isEmpty()) {
+                        validez = validityField;
+                    } else if (onLogin.contains("remc")) {
                         String[] parts = onLogin.split(",");
                         if (parts.length >= 3) {
                             validez = parts[2];
                         }
+                    } else if (!comment.isEmpty()) {
+                        validez = comment;
                     }
 
                     String timelimit = deduceTimelimit(name);
