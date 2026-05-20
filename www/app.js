@@ -43,12 +43,11 @@ async function callMikroTik(action, params) {
 async function fetchProfiles(ip, password) {
   const raw = await callMikroTik('profiles', { ip, password });
   const lines = raw.split('\n').filter(l => l.trim());
-  let diagInfo = '';
   const profiles = [];
+  let diagLines = [];
   for (const line of lines) {
-    // Lines starting with __ are diagnostic/metadata, skip them
     if (line.startsWith('__')) {
-      diagInfo += line + ' ';
+      diagLines.push(line);
       continue;
     }
     const parts = line.split(',');
@@ -60,8 +59,7 @@ async function fetchProfiles(ip, password) {
       });
     }
   }
-  // Store diagnostics for debugging
-  window.__diag = diagInfo;
+  window.__diagLines = diagLines;
   return profiles;
 }
 
@@ -189,16 +187,30 @@ async function openProfiles(routerId) {
 
   try {
     const profiles = await fetchProfiles(r.ip, r.password);
-    if (!profiles || profiles.length === 0) {
-      document.getElementById('profileList').innerHTML = '<div class="empty"><p>No se encontraron planes</p></div>';
-      return;
+
+    // Show diagnostic info
+    const diag = window.__diagLines || [];
+    let html = '';
+    if (diag.length > 0) {
+      html += '<div style="color:var(--warning);font-size:12px;margin-bottom:8px;padding:8px;background:var(--bg);border-radius:6px">';
+      diag.forEach(d => {
+        const parts = d.split(',');
+        html += '<div>' + escHtml(d) + '</div>';
+      });
+      html += '</div>';
     }
-    document.getElementById('profileList').innerHTML = profiles.map(p => `
-      <button class="profile-btn" onclick="openGenerate('${escAttr(p.name)}', '${escAttr(p.timelimit)}', '${escAttr(p.validez)}')">
-        <strong>${escHtml(p.name)}</strong>
-        <div class="sub">⏱ ${escHtml(p.timelimit)} &middot; Vence: ${escHtml(p.validez)}</div>
-      </button>
-    `).join('');
+
+    if (!profiles || profiles.length === 0) {
+      html += '<div class="empty"><p>No se encontraron planes</p></div>';
+    } else {
+      html += profiles.map(p => `
+        <button class="profile-btn" onclick="openGenerate('${escAttr(p.name)}', '${escAttr(p.timelimit)}', '${escAttr(p.validez)}')">
+          <strong>${escHtml(p.name)}</strong>
+          <div class="sub">⏱ ${escHtml(p.timelimit)} &middot; Vence: ${escHtml(p.validez)}</div>
+        </button>
+      `).join('');
+    }
+    document.getElementById('profileList').innerHTML = html;
   } catch(e) {
     document.getElementById('profileList').innerHTML = `<div class="empty"><p>Error: ${escHtml(e.message || e)}</p><button class="btn btn-small btn-outline" style="margin-top:12px" onclick="openProfiles('${escAttr(routerId)}')">Reintentar</button></div>`;
   }

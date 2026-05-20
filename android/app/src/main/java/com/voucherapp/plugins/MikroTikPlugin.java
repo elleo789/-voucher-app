@@ -147,35 +147,45 @@ public class MikroTikPlugin extends Plugin {
 
         List<Map<String, String>> getProfiles() throws Exception {
             // Use /ip/hotspot/user/profile/print to get all profiles
+            // Test 1: send bare print with no args to see raw response count
             List<String> words = new ArrayList<>();
             words.add("/ip/hotspot/user/profile/print");
-            // Only request name field - minimal response
-            words.add("=.proplist=name");
             sendSentence(words);
 
             List<Map<String, String>> response = readSentences();
             List<Map<String, String>> profiles = new ArrayList<>();
 
-            // Add diagnostic with raw count
-            Map<String, String> diag = new LinkedHashMap<>();
-            diag.put("name", "__diag__");
-            diag.put("timelimit", String.valueOf(response.size()));
-            diag.put("validez", "-");
-            profiles.add(diag);
+            // Store diagnostic: count of all sentences received
+            int totalSentences = response.size();
+            int profileCount = 0;
+            int trapCount = 0;
+            StringBuilder rawNames = new StringBuilder();
 
             for (Map<String, String> row : response) {
-                try {
-                    if (row.containsKey("!trap") || row.containsKey("!fatal")) continue;
-                    String name = row.get("name");
-                    if (name == null || name.equals("default")) continue;
+                if (row.containsKey("!trap")) { trapCount++; continue; }
+                if (row.containsKey("!fatal")) { continue; }
+                if (row.containsKey("!done")) { continue; }
+                if (!row.containsKey("name")) continue;
 
-                    Map<String, String> p = new LinkedHashMap<>();
-                    p.put("name", name);
-                    p.put("timelimit", "?");
-                    p.put("validez", "?");
-                    profiles.add(p);
-                } catch (Exception e) {}
+                String name = row.get("name");
+                if (name == null || name.equals("default")) continue;
+                profileCount++;
+                rawNames.append(name).append("|");
+
+                Map<String, String> p = new LinkedHashMap<>();
+                p.put("name", name);
+                p.put("timelimit", "?");
+                p.put("validez", "?");
+                profiles.add(p);
             }
+
+            // Diagnostic line
+            Map<String, String> diag = new LinkedHashMap<>();
+            diag.put("name", "__total__");
+            diag.put("timelimit", String.valueOf(totalSentences));
+            diag.put("validez", profileCount + "p/" + trapCount + "t/" + rawNames.toString());
+            profiles.add(0, diag);
+
             return profiles;
         }
 
