@@ -64,12 +64,7 @@ async function fetchProfiles(ip, password) {
   const raw = await callMikroTik('profiles', { ip, password });
   const lines = raw.split('\n').filter(l => l.trim());
   const profiles = [];
-  let diagLines = [];
   for (const line of lines) {
-    if (line.startsWith('__')) {
-      diagLines.push(line);
-      continue;
-    }
     const parts = line.split(',');
     if (parts.length >= 3 && parts[0] !== 'name' && parts[0] !== '?') {
       profiles.push({
@@ -79,7 +74,6 @@ async function fetchProfiles(ip, password) {
       });
     }
   }
-  window.__diagLines = diagLines;
   return profiles;
 }
 
@@ -117,10 +111,7 @@ function saveRouters() {
 
 function renderRouters() {
   const el = document.getElementById('routerList');
-  var hasBridge = bridgeAvailable();
   document.getElementById('routerCount').textContent = routers.length + ' MikroTik';
-  var warn = document.getElementById('mockWarning');
-  if (warn) warn.style.display = hasBridge ? 'none' : 'block';
 
   if (routers.length === 0) {
     el.innerHTML = '<div class="empty"><p>No hay MikroTiks agregados</p><p style="font-size:13px">Agrega el primero para empezar</p></div>';
@@ -223,15 +214,8 @@ async function openProfiles(routerId) {
     }
 
     const profiles = await fetchProfiles(r.ip, r.password);
-    const diag = window.__diagLines || [];
 
     let html = '';
-    if (diag.length > 0) {
-      html += '<div style="color:var(--warning);font-size:12px;margin-bottom:8px;padding:8px;background:var(--bg);border-radius:6px">';
-      diag.forEach(d => { html += '<div>' + escHtml(d) + '</div>'; });
-      html += '</div>';
-    }
-
     if (!profiles || profiles.length === 0) {
       html += '<div class="empty"><p>No se encontraron planes</p></div>';
     } else {
@@ -337,16 +321,24 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
 
-  // Medidas exactas del template-small de Mikhmon (en mm convertidas a pt: 1mm = 72/25.4)
+  // Helper: centrar texto horizontalmente
+  function centerText(page, text, centerX, y, size, fn, clr) {
+    const w = fn.widthOfTextAtSize(text, size);
+    page.drawText(text, { x: centerX - w/2, y: y, size: size, font: fn, color: clr });
+  }
+
+  // Medidas exactas del template-small de Mikhmon (1mm = 72/25.4 pt)
   function mm(v) { return v * 72 / 25.4; }
 
   const PW = mm(102);
   const PH = mm(169);
-  const VW = mm(60);
-  const VH = mm(27);
-  const XC = mm(21); // x_center = (102-60)/2
-  const COL_W = mm(26); // (60-8)/2
-  const GAP = mm(3);
+  const VW = mm(60);  // voucher width
+  const VH = mm(27);  // voucher height
+  const XC = (PW - VW) / 2;  // center X del voucher
+  const ML = mm(3);   // padding interno del voucher
+  const COL_W = (VW - ML * 2 - mm(2)) / 2;  // ancho de cada columna de credenciales
+  const GAP = mm(3);  // espacio entre vouchers
+  const TOP = mm(15); // margen superior de pagina
 
   for (let i = 0; i < vouchers.length; i++) {
     const pos = i % 3;
@@ -354,82 +346,66 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
     const page = doc.getPage(doc.getPageCount() - 1);
     const v = vouchers[i];
 
-    // Y base desde arriba: 15mm top margin + pos * (27+3)mm
-    // En pdf-lib Y crece hacia arriba, entonces calculamos desde abajo
-    const yTop = PH - mm(15) - pos * (VH + GAP);
-    const yBot = yTop - VH;
+    // pdf-lib: Y=0 es abajo, sube hacia arriba
+    const yTop = PH - TOP - pos * (VH + GAP);  // borde superior del voucher
+    const yBot = yTop - VH;                    // borde inferior
 
-    // Borde externo grueso (0.7mm)
+    // ---- Borde externo del voucher ----
     page.drawRectangle({
       x: XC, y: yBot, width: VW, height: VH,
       borderColor: rgb(0,0,0), borderWidth: mm(0.7)
     });
 
-    // Header: hotspot name centrado + [N] derecha (y = yTop - 2mm)
-    var hdrY = yTop - mm(2) - mm(5);
-    page.drawText(hotspotName, {
-      x: XC + mm(3), y: hdrY, size: mm(3.5), // font size ~10pt
-      font: fontBold, color: rgb(0,0,0)
-    });
-    page.drawText('[' + (i+1) + ']', {
-      x: XC + VW - mm(14), y: hdrY, size: mm(2.5),
+    // ---- Header: hotspot name + [N] ----
+    const hdrY = yTop - mm(2);  // baseline a 2mm del top
+    centerText(page, hotspotName, XC + VW/2, hdrY, mm(3.5), fontBold, rgb(0,0,0));
+    // Numero de voucher a la derecha
+    const numStr = '[' + (i+1) + ']';
+    const numW = fontBold.widthOfTextAtSize(numStr, mm(2.8));
+    page.drawText(numStr, {
+      x: XC + VW - ML - numW, y: hdrY, size: mm(2.8),
       font: fontBold, color: rgb(0,0,0)
     });
 
-    // Linea separadora (y = yTop - 7.5mm)
-    var lineY = yTop - mm(7.5);
+    // ---- Linea separadora a 7.5mm del top ----
+    const lineY = yTop - mm(7.5);
     page.drawLine({
-      start: { x: XC + mm(3), y: lineY },
-      end: { x: XC + VW - mm(3), y: lineY },
+      start: { x: XC + ML, y: lineY },
+      end: { x: XC + VW - ML, y: lineY },
       thickness: mm(0.3), color: rgb(0,0,0)
     });
 
-    // Labels: Username / Password (y = yTop - 8.5mm)
-    var labelY = yTop - mm(8.5) - mm(3);
-    page.drawText('Username', {
-      x: XC + mm(3) + mm(2), y: labelY, size: mm(2.1), font, color: rgb(0.3,0.3,0.3)
-    });
-    page.drawText('Password', {
-      x: XC + mm(3) + COL_W + mm(6), y: labelY, size: mm(2.1), font, color: rgb(0.3,0.3,0.3)
-    });
+    // ---- Labels: Username / Password a 8.5mm del top ----
+    const labelY = yTop - mm(8.5);
+    const col1CX = XC + ML + COL_W / 2;
+    const col2CX = XC + ML + COL_W + mm(2) + COL_W / 2;
+    centerText(page, 'Username', col1CX, labelY, mm(2.1), font, rgb(0.3,0.3,0.3));
+    centerText(page, 'Password', col2CX, labelY, mm(2.1), font, rgb(0.3,0.3,0.3));
 
-    // Credential boxes (y = yTop - 12mm)
-    var credY = yTop - mm(12) - mm(6);
+    // ---- Credential boxes a 12mm del top, 6mm de alto ----
+    const credY = yTop - mm(12) - mm(6);  // bottom edge de los boxes
     // Username box
     page.drawRectangle({
-      x: XC + mm(3), y: credY, width: COL_W, height: mm(6),
+      x: XC + ML, y: credY, width: COL_W, height: mm(6),
       borderColor: rgb(0,0,0), borderWidth: mm(0.3)
     });
-    page.drawText(v.user, {
-      x: XC + mm(3) + mm(2), y: credY + mm(1.5), size: mm(3.5),
-      font: fontBold, color: rgb(0,0,0)
-    });
+    centerText(page, v.user, XC + ML + COL_W/2, credY + mm(1.5), mm(3.5), fontBold, rgb(0,0,0));
     // Password box
+    const passBoxX = XC + ML + COL_W + mm(2);
     page.drawRectangle({
-      x: XC + mm(5) + COL_W, y: credY, width: COL_W, height: mm(6),
+      x: passBoxX, y: credY, width: COL_W, height: mm(6),
       borderColor: rgb(0,0,0), borderWidth: mm(0.3)
     });
-    page.drawText(v.pass, {
-      x: XC + mm(7) + COL_W, y: credY + mm(1.5), size: mm(3.5),
-      font: fontBold, color: rgb(0,0,0)
-    });
+    centerText(page, v.pass, passBoxX + COL_W/2, credY + mm(1.5), mm(3.5), fontBold, rgb(0,0,0));
 
-    // Footer: plan y validez (y = credY - 7.5mm - 5mm = yTop - 27mm = yBot)
-    var footY = credY - mm(7.5) - mm(5);
+    // ---- Footer: plan + validez ----
+    // En fpdf: empieza a 19.5mm del top (= 7.5mm desde el borde inferior)
+    const footY = yBot + mm(2.5);  // bottom edge del rect (a 2.5mm del borde inferior)
     page.drawRectangle({
-      x: XC + mm(3), y: footY, width: VW - mm(6), height: mm(5),
+      x: XC + ML, y: footY, width: VW - ML * 2, height: mm(5),
       borderColor: rgb(0,0,0), borderWidth: mm(0.3)
     });
-    // plan: xxx (left)
-    page.drawText('plan: ' + profile, {
-      x: XC + mm(4), y: footY + mm(1), size: mm(2.5),
-      font: fontBold, color: rgb(0,0,0)
-    });
-    // validez: xxx (right)
-    page.drawText('validez: ' + validez, {
-      x: XC + mm(4) + mm(20), y: footY + mm(1), size: mm(2.5),
-      font: fontBold, color: rgb(0,0,0)
-    });
+    centerText(page, profile + ' | ' + validez, XC + VW/2, footY + mm(1.5), mm(2.5), fontBold, rgb(0,0,0));
   }
   return await doc.save();
 }
@@ -438,10 +414,23 @@ function downloadPDF() {
   if (!lastPdfData) return;
   const blob = new Blob([lastPdfData.bytes], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = lastPdfData.filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+
+  // Intentar descarga via anchor
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = lastPdfData.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast('Descargando ' + lastPdfData.filename);
+  } catch(e) {
+    // Fallback: abrir en nueva pestana
+    window.open(url, '_blank');
+  }
+
+  // Liberar URL despues de un tiempo
+  setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
 }
 
 async function sharePDF() {
