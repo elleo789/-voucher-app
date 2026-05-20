@@ -219,9 +219,16 @@ public class MikroTikPlugin extends Plugin {
                     if (!validityField.isEmpty()) {
                         validez = validityField;
                     } else if (onLogin.contains("remc")) {
-                        String[] parts = onLogin.split(",");
-                        if (parts.length >= 3) {
-                            validez = parts[2];
+                        // Formato: [,]remc,ID,VALIDEZ,PRECIO,,Disable
+                        // Usar regex como en la version Flask original
+                        java.util.regex.Matcher rem = java.util.regex.Pattern.compile("remc,\\d+,([^,]+)").matcher(onLogin);
+                        if (rem.find()) {
+                            validez = rem.group(1);
+                        } else {
+                            String[] parts = onLogin.split(",");
+                            if (parts.length >= 4) {
+                                validez = parts[3];
+                            }
                         }
                     } else if (!comment.isEmpty()) {
                         validez = comment;
