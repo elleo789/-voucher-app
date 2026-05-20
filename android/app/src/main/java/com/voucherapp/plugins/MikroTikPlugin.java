@@ -113,36 +113,57 @@ public class MikroTikPlugin extends Plugin {
         }
 
         public void login(String password) throws Exception {
+            // Try simple password authentication first (most compatible)
             List<String> words = new ArrayList<>();
             words.add("/login");
+            words.add("=name=admin");
+            words.add("=password=" + password);
             sendSentence(words);
 
-            Map<String, String> response = readResponse();
-            String challenge = response.get("ret");
+            Map<String, String> loginResp = readResponse();
+            if (loginResp.containsKey("!done")) {
+                return; // Login successful
+            }
 
+            // If simple login failed (challenge required), try challenge-response
+            Map<String, String> firstResp = loginResp;
+            String challenge = firstResp.get("ret");
+            
             if (challenge != null && !challenge.isEmpty()) {
-                String responseHash = md5hex("\u0000" + password + challenge);
+                // Compute: MD5(\0 + password_bytes + challenge_hex_bytes)
+                String responseHash = md5hexForLogin(password, challenge);
                 words.clear();
                 words.add("/login");
                 words.add("=name=admin");
                 words.add("=response=00" + responseHash);
                 sendSentence(words);
 
-                Map<String, String> loginResp = readResponse();
-                if (loginResp.containsKey("!trap") || loginResp.containsKey("!fatal")) {
-                    throw new Exception("Error de autenticacion: " + loginResp.get("message"));
+                Map<String, String> challengeResp = readResponse();
+                if (challengeResp.containsKey("!done")) {
+                    return;
                 }
-            } else {
-                words.clear();
-                words.add("/login");
-                words.add("=name=admin");
-                words.add("=password=" + password);
-                sendSentence(words);
-                Map<String, String> loginResp = readResponse();
-                if (loginResp.containsKey("!trap") || loginResp.containsKey("!fatal")) {
-                    throw new Exception("Error de autenticacion: " + loginResp.get("message"));
-                }
+                throw new Exception("Error de autenticacion: " + challengeResp.get("message"));
             }
+
+            throw new Exception("Error de autenticacion: " + firstResp.get("message"));
+        }
+
+        private String md5hexForLogin(String password, String challenge) throws Exception {
+            // RouterOS login: MD5(null_byte + password + raw_challenge_string)
+            byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
+            byte[] challengeBytes = challenge.getBytes(StandardCharsets.UTF_8);
+            
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.update((byte)0); // null byte
+            md.update(passwordBytes);
+            md.update(challengeBytes);
+            
+            byte[] digest = md.digest();
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+            return sb.toString();
         }
 
         public List<Map<String, String>> getProfiles() throws Exception {
