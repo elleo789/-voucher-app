@@ -66,7 +66,7 @@ async function fetchProfiles(ip, password) {
   const profiles = [];
   for (const line of lines) {
     const parts = line.split(',');
-    if (parts.length >= 3 && parts[0] !== 'name' && parts[0] !== '?') {
+    if (parts.length >= 3 && parts[0] !== 'name' && parts[0] !== '?' && !parts[0].startsWith('_debug')) {
       profiles.push({
         name: parts[0],
         timelimit: parts[1],
@@ -357,7 +357,9 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
     });
 
     // ---- Header: hotspot name + [N] ----
-    const hdrY = yTop - mm(2);  // baseline a 2mm del top
+    // La fuente de 10pt (~3.5mm) se extiende ~2.7mm ARRIBA del baseline
+    // Ponemos baseline a 4.5mm del top para que el texto quede dentro del borde
+    const hdrY = yTop - mm(4.5);
     centerText(page, hotspotName, XC + VW/2, hdrY, mm(3.5), fontBold, rgb(0,0,0));
     // Numero de voucher a la derecha
     const numStr = '[' + (i+1) + ']';
@@ -410,12 +412,30 @@ async function generarPDF(vouchers, hotspotName, profile, validez) {
   return await doc.save();
 }
 
-function downloadPDF() {
+async function downloadPDF() {
   if (!lastPdfData) return;
   const blob = new Blob([lastPdfData.bytes], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
 
-  // Intentar descarga via anchor
+  // Intentar con File System Access API (dialogo Guardar Como)
+  try {
+    if ('showSaveFilePicker' in window) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: lastPdfData.filename,
+        types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      toast('PDF guardado en: ' + handle.name);
+      return;
+    }
+  } catch(e) {
+    // Usuario cancelo o API no disponible
+    if (e.name === 'AbortError' || e.name === 'SecurityError') return;
+  }
+
+  // Fallback: descarga directa
+  const url = URL.createObjectURL(blob);
   try {
     const a = document.createElement('a');
     a.href = url;
@@ -425,11 +445,8 @@ function downloadPDF() {
     document.body.removeChild(a);
     toast('Descargando ' + lastPdfData.filename);
   } catch(e) {
-    // Fallback: abrir en nueva pestana
     window.open(url, '_blank');
   }
-
-  // Liberar URL despues de un tiempo
   setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
 }
 
